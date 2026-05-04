@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 
@@ -57,6 +57,7 @@ export default function TournamentDetail() {
   const [loading, setLoading] = useState(true);
 
   const [isGameModalOpen, setIsGameModalOpen] = useState(false);
+  const [isResultModalOpen, setIsResultModalOpen] = useState(false); // 대회 결과 모달 상태 추가
   const [modalMode, setModalMode] = useState<"ADD" | "EDIT">("ADD");
   const [inputTab, setInputTab] = useState<"MANUAL" | "AUTO">("MANUAL");
 
@@ -89,6 +90,79 @@ export default function TournamentDetail() {
   useEffect(() => {
     loadData();
   }, [tournamentId]);
+
+  // --- 대회 결과(순위) 자동 계산 로직 ---
+  const tournamentResults = useMemo(() => {
+    const stats: Record<
+      number,
+      {
+        id: number;
+        name: string;
+        wins: number;
+        draws: number;
+        losses: number;
+        points: number;
+        total: number;
+      }
+    > = {};
+
+    games.forEach((g) => {
+      // 흑, 백 선수 초기화
+      if (!stats[g.black_player_id]) {
+        const p = players.find((p) => p.id === g.black_player_id);
+        stats[g.black_player_id] = {
+          id: g.black_player_id,
+          name: p?.name || "알 수 없음",
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          points: 0,
+          total: 0,
+        };
+      }
+      if (!stats[g.white_player_id]) {
+        const p = players.find((p) => p.id === g.white_player_id);
+        stats[g.white_player_id] = {
+          id: g.white_player_id,
+          name: p?.name || "알 수 없음",
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          points: 0,
+          total: 0,
+        };
+      }
+
+      const bStat = stats[g.black_player_id];
+      const wStat = stats[g.white_player_id];
+
+      bStat.total += 1;
+      wStat.total += 1;
+
+      // 승무패 및 승점 계산 (승리: 1점, 무승부: 0.5점)
+      if (g.result === "BLACK_WIN") {
+        bStat.wins += 1;
+        bStat.points += 1;
+        wStat.losses += 1;
+      } else if (g.result === "WHITE_WIN") {
+        wStat.wins += 1;
+        wStat.points += 1;
+        bStat.losses += 1;
+      } else if (g.result === "DRAW") {
+        bStat.draws += 1;
+        bStat.points += 0.5;
+        wStat.draws += 1;
+        wStat.points += 0.5;
+      }
+    });
+
+    // 승점 높은 순 -> 승수 높은 순 -> 패배 적은 순으로 정렬
+    return Object.values(stats).sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      return a.losses - b.losses;
+    });
+  }, [games, players]);
 
   const handleTournamentUpdate = async () => {
     if (!tournament) return;
@@ -198,11 +272,7 @@ export default function TournamentDetail() {
     };
 
     if (modalMode === "ADD") {
-      const nextId =
-        games.length > 0 ? Math.max(...games.map((g) => g.id)) + 1 : 1;
-      const { error } = await supabase
-        .from("games")
-        .insert([{ id: nextId, ...payload }]);
+      const { error } = await supabase.from("games").insert([payload]);
       if (error) alert("대국 추가 실패: " + error.message);
     } else {
       const { error } = await supabase
@@ -256,7 +326,6 @@ export default function TournamentDetail() {
         ← 대회 목록으로
       </button>
 
-      {}
       <div
         style={{
           backgroundColor: "#fff",
@@ -373,7 +442,7 @@ export default function TournamentDetail() {
         </div>
       </div>
 
-      {/* 등록된 대국 리스트 */}
+      {/* 등록된 대국 리스트 헤더 */}
       <div
         style={{
           display: "flex",
@@ -385,20 +454,37 @@ export default function TournamentDetail() {
         <h2 style={{ margin: 0, fontSize: "1.3rem" }}>
           ⚔️ 등록된 대국 리스트 ({games.length}건)
         </h2>
-        <button
-          onClick={() => openGameModal("ADD")}
-          style={{
-            padding: "8px 16px",
-            backgroundColor: "#2563eb",
-            color: "#fff",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          + 대국 추가
-        </button>
+        {/* 버튼 그룹: 대회 결과 & 대국 추가 */}
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={() => setIsResultModalOpen(true)}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#f59e0b",
+              color: "#fff",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            📊 대회 결과
+          </button>
+          <button
+            onClick={() => openGameModal("ADD")}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#2563eb",
+              color: "#fff",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            + 대국 추가
+          </button>
+        </div>
       </div>
 
       <div
@@ -508,13 +594,159 @@ export default function TournamentDetail() {
         </table>
       </div>
 
-      {/* 대국 추가/수정 모달 */}
       <datalist id="player-list">
         {players.map((p) => (
           <option key={p.id} value={p.name} />
         ))}
       </datalist>
 
+      {/* --- 대회 결과(순위) 모달 --- */}
+      {isResultModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#fff",
+              padding: "30px",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "600px",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 25px rgba(0,0,0,0.1)",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: "20px",
+                color: "#111",
+                fontSize: "1.4rem",
+              }}
+            >
+              📊 {tournament.name} 결과
+            </h2>
+
+            <div
+              style={{
+                border: "1px solid #eee",
+                borderRadius: "8px",
+                overflow: "hidden",
+                marginBottom: "20px",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  textAlign: "center",
+                }}
+              >
+                <thead
+                  style={{
+                    backgroundColor: "#f9fafb",
+                    borderBottom: "1px solid #eee",
+                    color: "#555",
+                  }}
+                >
+                  <tr>
+                    <th style={{ padding: "12px" }}>순위</th>
+                    <th style={{ padding: "12px" }}>이름</th>
+                    <th style={{ padding: "12px" }}>승점</th>
+                    <th style={{ padding: "12px" }}>대국수</th>
+                    <th style={{ padding: "12px" }}>승</th>
+                    <th style={{ padding: "12px" }}>무</th>
+                    <th style={{ padding: "12px" }}>패</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tournamentResults.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        style={{ padding: "20px", color: "#888" }}
+                      >
+                        기록된 대국이 없습니다.
+                      </td>
+                    </tr>
+                  ) : (
+                    tournamentResults.map((stat, idx) => (
+                      <tr
+                        key={stat.id}
+                        style={{ borderBottom: "1px solid #f9fafb" }}
+                      >
+                        <td style={{ padding: "12px", fontWeight: "bold" }}>
+                          {idx + 1}
+                        </td>
+                        <td
+                          style={{
+                            padding: "12px",
+                            fontWeight: "bold",
+                            color: "#2563eb",
+                          }}
+                        >
+                          {stat.name}
+                        </td>
+                        <td
+                          style={{
+                            padding: "12px",
+                            fontWeight: "bold",
+                            color: "#10b981",
+                          }}
+                        >
+                          {stat.points}
+                        </td>
+                        <td style={{ padding: "12px", color: "#666" }}>
+                          {stat.total}
+                        </td>
+                        <td style={{ padding: "12px", color: "#333" }}>
+                          {stat.wins}
+                        </td>
+                        <td style={{ padding: "12px", color: "#333" }}>
+                          {stat.draws}
+                        </td>
+                        <td style={{ padding: "12px", color: "#333" }}>
+                          {stat.losses}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              onClick={() => setIsResultModalOpen(false)}
+              style={{
+                width: "100%",
+                padding: "12px",
+                border: "none",
+                borderRadius: "8px",
+                backgroundColor: "#e5e7eb",
+                color: "#374151",
+                fontWeight: "bold",
+                cursor: "pointer",
+              }}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- 기존 대국 추가/수정 모달 --- */}
       {isGameModalOpen && (
         <div
           style={{
@@ -567,7 +799,6 @@ export default function TournamentDetail() {
               )}
             </h2>
 
-            {/* 수동/자동 탭 (추가 모달에서만 표시) */}
             {modalMode === "ADD" && (
               <div
                 style={{
