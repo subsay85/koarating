@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
+// 1. 기존 createBrowserClient 임포트를 지우고, 우리가 만든 공용 supabase를 불러옵니다.
+import { supabase } from "@/lib/supabase";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
@@ -11,10 +12,8 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  // 2. 이 자리에 있던 const supabase = createBrowserClient(...) 코드를 통째로 삭제했습니다!
+  // 이제 위에서 import 한 공용 supabase를 바로 사용하게 됩니다.
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

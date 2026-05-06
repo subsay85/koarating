@@ -2,11 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from "@/lib/supabase"; // 1. 공용 supabase 통로 임포트
 
 interface Tournament {
   id: number;
@@ -83,6 +79,17 @@ export default function AdminTournaments() {
     }
   };
 
+  // --- 2. 로그아웃 처리 함수 추가 ---
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      alert("로그아웃 실패: " + error.message);
+    } else {
+      alert("안전하게 로그아웃 되었습니다.");
+      router.push("/admin/login"); // 로그아웃 후 로그인 페이지로 이동
+    }
+  };
+
   return (
     <div
       style={{
@@ -103,20 +110,42 @@ export default function AdminTournaments() {
         <h1 style={{ fontSize: "1.8rem", margin: 0 }}>
           🏆 대회(Tournament) 관리
         </h1>
-        <button
-          onClick={handleOpenAdd}
-          style={{
-            padding: "10px 20px",
-            backgroundColor: "#2563eb",
-            color: "#fff",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          + 대회 추가
-        </button>
+
+        {/* 3. 버튼들을 한데 묶어주는 영역 (로그아웃 버튼 추가) */}
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#ef4444",
+              color: "#fff",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "bold",
+              transition: "opacity 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            로그아웃
+          </button>
+
+          <button
+            onClick={handleOpenAdd}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#2563eb",
+              color: "#fff",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            + 대회 추가
+          </button>
+        </div>
       </header>
 
       {/* 필터 바 */}

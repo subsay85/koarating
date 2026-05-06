@@ -31,6 +31,9 @@ export default function Home() {
   );
   const [selectedDateStr, setSelectedDateStr] = useState<string>("");
 
+  // 검색어 상태 추가
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
   useEffect(() => {
     if (tournamentsData.length > 0 && !selectedDateStr) {
       const sorted = [...tournamentsData].sort(
@@ -165,6 +168,14 @@ export default function Home() {
     return sortedStats;
   }, [playersData, gamesData, tournamentsData, mode, selectedDateStr]);
 
+  // 이름으로 필터링된 결과 계산
+  const filteredRankingResult = useMemo(() => {
+    if (!searchTerm.trim()) return rankingResult;
+    return rankingResult.filter((stat) =>
+      stat.player.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    );
+  }, [rankingResult, searchTerm]);
+
   const formatRank = (level: number, type: RankType) => {
     if (level === 0 || type === "UNRANKED") return "-";
     if (type === "DAN") return `${level}단`;
@@ -254,7 +265,7 @@ export default function Home() {
       </div>
 
       {mode === "SPECIFIC_DATE" && (
-        <div style={{ marginBottom: "20px" }}>
+        <div style={{ marginBottom: "16px" }}>
           <input
             type="date"
             value={selectedDateStr}
@@ -271,6 +282,26 @@ export default function Home() {
           />
         </div>
       )}
+
+      {/* --- 선수 이름 검색 필터 --- */}
+      <div style={{ marginBottom: "20px" }}>
+        <input
+          type="text"
+          placeholder="🔍 선수 이름 검색..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "12px",
+            fontSize: "1rem",
+            borderRadius: "8px",
+            border: "1px solid #d1d5db",
+            outline: "none",
+            boxSizing: "border-box",
+            backgroundColor: "#f9fafb",
+          }}
+        />
+      </div>
 
       <div
         style={{
@@ -307,7 +338,7 @@ export default function Home() {
             </tr>
           </thead>
           <tbody>
-            {rankingResult.map((stat, index) => (
+            {filteredRankingResult.map((stat, index) => (
               <tr
                 key={stat.player.id}
                 style={{
@@ -378,10 +409,10 @@ export default function Home() {
                 </td>
               </tr>
             ))}
-            {rankingResult.length === 0 && (
+            {filteredRankingResult.length === 0 && (
               <tr>
                 <td colSpan={6} style={{ padding: "40px", color: "#888" }}>
-                  데이터가 없습니다.
+                  검색된 선수 데이터가 없습니다.
                 </td>
               </tr>
             )}

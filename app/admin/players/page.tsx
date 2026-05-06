@@ -1,11 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase"; // 공용 supabase 통로 임포트
 
 type RankType = "DAN" | "KYU" | "UNRANKED";
 
@@ -41,6 +38,8 @@ const RANK_OPTIONS = [
 ];
 
 export default function AdminPlayers() {
+  const router = useRouter();
+
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -87,8 +86,6 @@ export default function AdminPlayers() {
   };
 
   const handleOpenAdd = () => {
-    const nextId =
-      players.length > 0 ? Math.max(...players.map((p) => p.id)) + 1 : 1;
     setFormData({ name: "", rankIdx: 18, rank_point: 0, renjunet: "" });
     setIsAddModalOpen(true);
   };
@@ -146,6 +143,17 @@ export default function AdminPlayers() {
     fetchPlayers();
   };
 
+  // --- 로그아웃 처리 함수 ---
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      alert("로그아웃 실패: " + error.message);
+    } else {
+      alert("안전하게 로그아웃 되었습니다.");
+      router.push("/admin/login");
+    }
+  };
+
   return (
     <div
       style={{
@@ -164,20 +172,42 @@ export default function AdminPlayers() {
         }}
       >
         <h1 style={{ fontSize: "1.8rem", margin: 0 }}>👤 선수 관리</h1>
-        <button
-          onClick={handleOpenAdd}
-          style={{
-            padding: "10px 20px",
-            backgroundColor: "#2563eb",
-            color: "#fff",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          + 선수 추가
-        </button>
+
+        {/* 버튼 그룹 */}
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#ef4444",
+              color: "#fff",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "bold",
+              transition: "opacity 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            로그아웃
+          </button>
+
+          <button
+            onClick={handleOpenAdd}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#2563eb",
+              color: "#fff",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            + 선수 추가
+          </button>
+        </div>
       </header>
 
       {/* 필터 바 */}
@@ -384,6 +414,7 @@ export default function AdminPlayers() {
                 >
                   기력 *
                 </label>
+                {/* select 태그가 제대로 열리고 닫히도록 수정했습니다 */}
                 <select
                   value={formData.rankIdx}
                   onChange={(e) =>

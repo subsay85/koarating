@@ -2,11 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from "@/lib/supabase"; // 1. 공용 supabase 통로 임포트
 
 interface Player {
   id: number;
@@ -57,7 +53,7 @@ export default function TournamentDetail() {
   const [loading, setLoading] = useState(true);
 
   const [isGameModalOpen, setIsGameModalOpen] = useState(false);
-  const [isResultModalOpen, setIsResultModalOpen] = useState(false); // 대회 결과 모달 상태 추가
+  const [isResultModalOpen, setIsResultModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"ADD" | "EDIT">("ADD");
   const [inputTab, setInputTab] = useState<"MANUAL" | "AUTO">("MANUAL");
 
@@ -296,6 +292,17 @@ export default function TournamentDetail() {
     }
   };
 
+  // --- 2. 로그아웃 처리 함수 추가 ---
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      alert("로그아웃 실패: " + error.message);
+    } else {
+      alert("안전하게 로그아웃 되었습니다.");
+      router.push("/admin/login");
+    }
+  };
+
   if (loading)
     return (
       <div style={{ padding: "40px", textAlign: "center" }}>로딩 중...</div>
@@ -312,19 +319,46 @@ export default function TournamentDetail() {
         fontFamily: "sans-serif",
       }}
     >
-      <button
-        onClick={() => router.push("/admin/tournaments")}
+      {/* 3. 헤더 영역 수정 (뒤로가기 버튼과 로그아웃 버튼을 한 줄에 배치) */}
+      <div
         style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
           marginBottom: "20px",
-          padding: "8px 16px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          background: "#f9f9f9",
-          cursor: "pointer",
         }}
       >
-        ← 대회 목록으로
-      </button>
+        <button
+          onClick={() => router.push("/admin/tournaments")}
+          style={{
+            padding: "8px 16px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            background: "#f9f9f9",
+            cursor: "pointer",
+          }}
+        >
+          ← 대회 목록으로
+        </button>
+
+        <button
+          onClick={handleLogout}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#ef4444",
+            color: "#fff",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontWeight: "bold",
+            transition: "opacity 0.2s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          로그아웃
+        </button>
+      </div>
 
       <div
         style={{
