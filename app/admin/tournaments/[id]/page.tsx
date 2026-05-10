@@ -200,29 +200,109 @@ export default function TournamentDetail() {
     setIsGameModalOpen(true);
   };
 
-  const handleAutoParse = () => {
+  const handleAutoParse = async () => {
     const text = autoText.trim();
     if (!text) return;
 
-    const resultMatch = text.match(/(1\s*:\s*0|0\s*:\s*1|0\.5\s*:\s*0\.5)/);
+    // 줄 단위로 분리 (빈 줄 제거)
+    const lines = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l);
+
+    if (lines.length === 0) return alert("입력된 데이터가 없습니다.");
+
+    // 한 줄만 있으면 → 기존처럼 폼에 채워넣기 (수동 검토용)
+    if (lines.length === 1) {
+      parseSingleLineToForm(lines[0]);
+      return;
+    }
+
+    // 여러 줄이면 → 일괄 등록 모드
+    const payloads: any[] = [];
+    const errors: string[] = [];
+
+    lines.forEach((line, idx) => {
+      const result = parseSingleLine(line);
+      if (typeof result === "string") {
+        errors.push(`${idx + 1}번째 줄: ${result}`);
+      } else {
+        payloads.push({
+          tournament_id: tournamentId,
+          black_player_id: result.blackId,
+          white_player_id: result.whiteId,
+          result: result.dbResult,
+          note: result.note,
+        });
+      }
+    });
+
+    if (errors.length > 0) {
+      return alert(
+        `다음 줄에서 오류가 발생했습니다.\n\n${errors.join("\n")}\n\n수정 후 다시 시도해주세요.`,
+      );
+    }
+
+    if (
+      !window.confirm(`총 ${payloads.length}개의 대국을 일괄 등록하시겠습니까?`)
+    )
+      return;
+
+    const { error } = await supabase.from("games").insert(payloads);
+    if (error) {
+      alert("일괄 등록 실패: " + error.message);
+    } else {
+      alert(`${payloads.length}개의 대국이 등록되었습니다.`);
+      setIsGameModalOpen(false);
+      loadData();
+    }
+  };
+
+  // 한 줄을 파싱해서 폼에 채워넣는 함수 (단일 입력용)
+  const parseSingleLineToForm = (line: string) => {
+    const result = parseSingleLine(line);
+    if (typeof result === "string") {
+      return alert(result);
+    }
+
+    const bPlayer = players.find((p) => p.id === result.blackId);
+    const wPlayer = players.find((p) => p.id === result.whiteId);
+
+    setGameForm({
+      ...gameForm,
+      blackName: bPlayer?.name || "",
+      whiteName: wPlayer?.name || "",
+      result: result.dbResult,
+      note: result.note,
+    });
+    setInputTab("MANUAL");
+  };
+
+  // 한 줄 파싱 핵심 로직 (성공: 객체, 실패: 에러 메시지 문자열)
+  const parseSingleLine = (
+    line: string,
+  ):
+    | { blackId: number; whiteId: number; dbResult: string; note: string }
+    | string => {
+    const resultMatch = line.match(/(1\s*:\s*0|0\s*:\s*1|0\.5\s*:\s*0\.5)/);
     if (!resultMatch)
-      return alert("결과(1 : 0, 0 : 1, 0.5 : 0.5)를 찾을 수 없습니다.");
+      return `결과(1:0, 0:1, 0.5:0.5)를 찾을 수 없습니다. → "${line}"`;
 
     const resStr = resultMatch[0].replace(/\s/g, "");
     let dbResult = "DRAW";
     if (resStr === "1:0") dbResult = "BLACK_WIN";
     else if (resStr === "0:1") dbResult = "WHITE_WIN";
 
-    const [leftPart, rightPart] = text.split(resultMatch[0]);
+    const [leftPart, rightPart] = line.split(resultMatch[0]);
 
     const noteMatch = leftPart.match(/^\s*(\d+)/);
     const parsedNote = noteMatch ? noteMatch[1] : "";
 
-    let bStr = leftPart
+    const bStr = leftPart
       .replace(/^\s*\d+\s*/, "")
       .replace(/\b[A-Z]{3}\b/g, "")
       .trim();
-    let wStr = rightPart.replace(/\b[A-Z]{3}\b/g, "").trim();
+    const wStr = rightPart.replace(/\b[A-Z]{3}\b/g, "").trim();
 
     const bPlayer = players.find(
       (p) => p.renjunet?.toLowerCase() === bStr.toLowerCase(),
@@ -231,23 +311,15 @@ export default function TournamentDetail() {
       (p) => p.renjunet?.toLowerCase() === wStr.toLowerCase(),
     );
 
-    if (!bPlayer)
-      return alert(
-        `흑 대국자의 렌주넷 ID '${bStr}'를 선수 목록에서 찾을 수 없습니다.`,
-      );
-    if (!wPlayer)
-      return alert(
-        `백 대국자의 렌주넷 ID '${wStr}'를 선수 목록에서 찾을 수 없습니다.`,
-      );
+    if (!bPlayer) return `흑 대국자 '${bStr}'를 찾을 수 없습니다.`;
+    if (!wPlayer) return `백 대국자 '${wStr}'를 찾을 수 없습니다.`;
 
-    setGameForm({
-      ...gameForm,
-      blackName: bPlayer.name,
-      whiteName: wPlayer.name,
-      result: dbResult,
+    return {
+      blackId: bPlayer.id,
+      whiteId: wPlayer.id,
+      dbResult,
       note: parsedNote,
-    });
-    setInputTab("MANUAL");
+    };
   };
 
   const handleSaveGame = async () => {
