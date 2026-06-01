@@ -25,17 +25,19 @@ export default function AdminTournaments() {
   });
 
   const fetchTournaments = async () => {
-    setLoading(true);
     const { data, error } = await supabase
       .from("tournaments")
       .select("*")
       .order("start_date", { ascending: false });
+    if (error) console.error("대회 목록 로딩 에러:", error);
     if (data) setTournaments(data);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchTournaments();
+    void (async () => {
+      await fetchTournaments();
+    })();
   }, []);
 
   const filteredTournaments = useMemo(() => {
@@ -59,10 +61,15 @@ export default function AdminTournaments() {
       return alert("대회명과 시작일을 입력해 주세요.");
     if (formData.weight < 1) return alert("가중치는 1 이상이어야 합니다.");
 
-    const nextId =
-      tournaments.length > 0
-        ? Math.max(...tournaments.map((t) => t.id)) + 1
-        : 1;
+    // id 컬럼에 default 가 없으므로 직접 채번한다.
+    // 화면 state(stale 가능) 대신 insert 직전 DB의 현재 최대 id 를 조회해 경쟁 구간을 최소화한다.
+    const { data: maxRow } = await supabase
+      .from("tournaments")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const nextId = (maxRow?.id ?? 0) + 1;
     const { error } = await supabase.from("tournaments").insert([
       {
         id: nextId,
@@ -293,11 +300,7 @@ export default function AdminTournaments() {
                 </label>
                 <input
                   type="text"
-                  value={
-                    tournaments.length > 0
-                      ? Math.max(...tournaments.map((t) => t.id)) + 1
-                      : 1
-                  }
+                  value="자동 생성"
                   disabled
                   style={{
                     width: "100%",

@@ -13,15 +13,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useData } from "../../context/DataContext";
-
-type RankType = "DAN" | "KYU" | "UNRANKED";
-
-interface Tournament {
-  id: number;
-  name: string;
-  weight: number;
-  start_date: string;
-}
+import { computeRatings, type RankType, type Tournament } from "@/lib/rating";
+import { parseLocalDate } from "@/lib/date";
 
 interface ChartData {
   dateLabel: string;
@@ -38,88 +31,15 @@ export default function PlayerDetail() {
 
   const targetPlayer = playersData.find((p) => Number(p.id) === targetPlayerId);
 
+  // id → 선수 빠른 조회용 맵 (대국 이력 렌더 시 선형 탐색 방지)
+  const playerById = useMemo(
+    () => new Map(playersData.map((p) => [Number(p.id), p])),
+    [playersData],
+  );
+
   const calculateRatingsForWindow = useCallback(
-    (tournamentsInWindow: Tournament[]) => {
-      const statsMap = new Map();
-      playersData.forEach((p) => {
-        statsMap.set(Number(p.id), {
-          rating: 1200,
-          wins: 0,
-          draws: 0,
-          losses: 0,
-          totalGames: 0,
-        });
-      });
-
-      tournamentsInWindow.forEach((tournament) => {
-        const ratingChanges = new Map<number, number>();
-        const tournamentGames = gamesData.filter(
-          (g) => Number(g.tournament_id) === Number(tournament.id),
-        );
-
-        tournamentGames.forEach((game) => {
-          const blackId = Number(game.black_player_id);
-          const whiteId = Number(game.white_player_id);
-          const black = statsMap.get(blackId);
-          const white = statsMap.get(whiteId);
-          if (!black || !white) return;
-
-          const rB = black.rating;
-          const rW = white.rating;
-
-          const expectB = 1 / (1 + Math.pow(10, (rW - rB) / 400));
-          const expectW = 1 / (1 + Math.pow(10, (rB - rW) / 400));
-
-          const winPointB = (1 - expectB) * 12 * tournament.weight + 0.5;
-          const losePointB = (0 - expectB) * 12 + 0.5;
-          const drawPointB = (winPointB + losePointB) / 2;
-
-          const winPointW = (1 - expectW) * 12 * tournament.weight + 0.5;
-          const losePointW = (0 - expectW) * 12 + 0.5;
-          const drawPointW = (winPointW + losePointW) / 2;
-
-          let changeB = 0;
-          let changeW = 0;
-          const resultUpper = String(game.result).toUpperCase();
-
-          if (resultUpper === "BLACK_WIN") {
-            changeB = winPointB;
-            changeW = losePointW;
-            black.wins++;
-            white.losses++;
-          } else if (resultUpper === "WHITE_WIN") {
-            changeB = losePointB;
-            changeW = winPointW;
-            black.losses++;
-            white.wins++;
-          } else if (resultUpper === "DRAW") {
-            changeB = drawPointB;
-            changeW = drawPointW;
-            black.draws++;
-            white.draws++;
-          }
-
-          black.totalGames++;
-          white.totalGames++;
-
-          ratingChanges.set(
-            blackId,
-            (ratingChanges.get(blackId) || 0) + changeB,
-          );
-          ratingChanges.set(
-            whiteId,
-            (ratingChanges.get(whiteId) || 0) + changeW,
-          );
-        });
-
-        ratingChanges.forEach((change, playerId) => {
-          const p = statsMap.get(playerId);
-          if (p) p.rating += change;
-        });
-      });
-
-      return statsMap;
-    },
+    (tournamentsInWindow: Tournament[]) =>
+      computeRatings(playersData, gamesData, tournamentsInWindow),
     [playersData, gamesData],
   );
 
@@ -128,20 +48,20 @@ export default function PlayerDetail() {
       return { finalStat: null, chartData: [] };
 
     const sortedAllTournaments = [...tournamentsData].sort((a, b) => {
-      const dA = new Date(a.start_date).getTime();
-      const dB = new Date(b.start_date).getTime();
+      const dA = parseLocalDate(a.start_date).getTime();
+      const dB = parseLocalDate(b.start_date).getTime();
       if (dA === dB) return Number(a.id) - Number(b.id);
       return dA - dB;
     });
 
     const latestDateStr =
       sortedAllTournaments[sortedAllTournaments.length - 1].start_date;
-    const globalEnd = new Date(latestDateStr);
-    const globalStart = new Date(latestDateStr);
+    const globalEnd = parseLocalDate(latestDateStr);
+    const globalStart = parseLocalDate(latestDateStr);
     globalStart.setFullYear(globalStart.getFullYear() - 5);
 
     const globalWindowTournaments = sortedAllTournaments.filter((t) => {
-      const tDate = new Date(t.start_date);
+      const tDate = parseLocalDate(t.start_date);
       return tDate >= globalStart && tDate <= globalEnd;
     });
 
@@ -165,7 +85,7 @@ export default function PlayerDetail() {
     });
 
     if (participatedTournaments.length > 0) {
-      const firstTDate = new Date(participatedTournaments[0].start_date);
+      const firstTDate = parseLocalDate(participatedTournaments[0].start_date);
       const startMonth = new Date(
         firstTDate.getFullYear(),
         firstTDate.getMonth(),
@@ -185,22 +105,22 @@ export default function PlayerDetail() {
 
       while (currentMonth <= endMonth) {
         const tCum = sortedAllTournaments.filter(
-          (t) => new Date(t.start_date) < currentMonth,
+          (t) => parseLocalDate(t.start_date) < currentMonth,
         );
         const rCum =
           calculateRatingsForWindow(tCum).get(targetPlayerId)?.rating || 1200;
 
         const pTournamentsUpToMonth = participatedTournaments.filter(
-          (t) => new Date(t.start_date) <= currentMonth,
+          (t) => parseLocalDate(t.start_date) <= currentMonth,
         );
         let rOld = 1200;
         if (pTournamentsUpToMonth.length > 0) {
           const lastT = pTournamentsUpToMonth[pTournamentsUpToMonth.length - 1];
-          const lastTDate = new Date(lastT.start_date);
+          const lastTDate = parseLocalDate(lastT.start_date);
           const oldStart = new Date(lastTDate);
           oldStart.setFullYear(oldStart.getFullYear() - 5);
           const tOld = sortedAllTournaments.filter((t) => {
-            const d = new Date(t.start_date);
+            const d = parseLocalDate(t.start_date);
             return d >= oldStart && d <= lastTDate;
           });
           rOld =
@@ -234,8 +154,8 @@ export default function PlayerDetail() {
       return [];
 
     const sortedAllTournaments = [...tournamentsData].sort((a, b) => {
-      const dA = new Date(a.start_date).getTime();
-      const dB = new Date(b.start_date).getTime();
+      const dA = parseLocalDate(a.start_date).getTime();
+      const dB = parseLocalDate(b.start_date).getTime();
       if (dA === dB) return Number(a.id) - Number(b.id);
       return dA - dB;
     });
@@ -254,7 +174,8 @@ export default function PlayerDetail() {
 
     const displayTournaments = [...pTournaments].sort(
       (a, b) =>
-        new Date(b.start_date).getTime() - new Date(a.start_date).getTime(),
+        parseLocalDate(b.start_date).getTime() -
+        parseLocalDate(a.start_date).getTime(),
     );
 
     return displayTournaments.map((t) => {
@@ -265,8 +186,8 @@ export default function PlayerDetail() {
       const formattedGames = gamesInT.map((g) => {
         const blackId = Number(g.black_player_id);
         const whiteId = Number(g.white_player_id);
-        const blackPlayer = playersData.find((p) => Number(p.id) === blackId);
-        const whitePlayer = playersData.find((p) => Number(p.id) === whiteId);
+        const blackPlayer = playerById.get(blackId);
+        const whitePlayer = playerById.get(whiteId);
         const blackName = blackPlayer?.name || "알 수 없음";
         const whiteName = whitePlayer?.name || "알 수 없음";
 
@@ -300,7 +221,7 @@ export default function PlayerDetail() {
         games: formattedGames,
       };
     });
-  }, [targetPlayerId, targetPlayer, tournamentsData, gamesData, playersData]);
+  }, [targetPlayerId, targetPlayer, tournamentsData, gamesData, playerById]);
 
   const formatRank = (level: number, type: RankType) => {
     if (level === 0 || type === "UNRANKED") return "-";

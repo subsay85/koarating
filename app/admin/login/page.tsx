@@ -29,10 +29,10 @@ export default function AdminLogin() {
       setErrorMsg(`로그인 실패: ${error.message}`);
       setLoading(false);
     } else {
+      // signInWithPassword 가 성공하면 세션 쿠키가 이미 기록된 상태이므로
+      // 곧바로 이동한 뒤 refresh 로 서버 컴포넌트/미들웨어를 갱신한다.
+      router.replace("/admin/players");
       router.refresh();
-      setTimeout(() => {
-        router.push("/admin/players");
-      }, 100);
     }
   };
 
