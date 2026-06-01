@@ -56,17 +56,19 @@ export default function AdminPlayers() {
   });
 
   const fetchPlayers = async () => {
-    setLoading(true);
     const { data, error } = await supabase
       .from("players")
       .select("*")
       .order("id", { ascending: true });
+    if (error) console.error("선수 목록 로딩 에러:", error);
     if (data) setPlayers(data);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchPlayers();
+    void (async () => {
+      await fetchPlayers();
+    })();
   }, []);
 
   const filteredPlayers = useMemo(() => {
@@ -124,8 +126,15 @@ export default function AdminPlayers() {
     };
 
     if (mode === "ADD") {
-      const nextId =
-        players.length > 0 ? Math.max(...players.map((p) => p.id)) + 1 : 1;
+      // id 컬럼에 default 가 없으므로 직접 채번한다.
+      // 화면 state(stale 가능) 대신 insert 직전 DB의 현재 최대 id 를 조회해 경쟁 구간을 최소화한다.
+      const { data: maxRow } = await supabase
+        .from("players")
+        .select("id")
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextId = (maxRow?.id ?? 0) + 1;
       const { error } = await supabase
         .from("players")
         .insert([{ id: nextId, ...payload }]);
@@ -359,13 +368,7 @@ export default function AdminPlayers() {
                 </label>
                 <input
                   type="text"
-                  value={
-                    isAddModalOpen
-                      ? players.length > 0
-                        ? Math.max(...players.map((p) => p.id)) + 1
-                        : 1
-                      : selectedPlayer?.id
-                  }
+                  value={isAddModalOpen ? "자동 생성" : selectedPlayer?.id}
                   disabled
                   style={{
                     width: "100%",

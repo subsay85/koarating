@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase"; // 1. 공용 supabase 통로 임포트
+import { fetchAllData } from "@/lib/queries";
 
 interface Player {
   id: number;
@@ -24,22 +25,12 @@ interface Tournament {
   start_date: string;
 }
 
-async function fetchAllData<T>(tableName: string): Promise<T[]> {
-  let allData: T[] = [];
-  let from = 0,
-    step = 1000,
-    hasMore = true;
-  while (hasMore) {
-    const { data } = await supabase
-      .from(tableName)
-      .select("*")
-      .range(from, from + step - 1);
-    if (!data) break;
-    allData = [...allData, ...(data as T[])];
-    if (data.length < step) hasMore = false;
-    else from += step;
-  }
-  return allData;
+interface GameInsert {
+  tournament_id: number;
+  black_player_id: number;
+  white_player_id: number;
+  result: string;
+  note: string;
 }
 
 export default function TournamentDetail() {
@@ -66,8 +57,7 @@ export default function TournamentDetail() {
   });
   const [autoText, setAutoText] = useState("");
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = useCallback(async () => {
     const [tData, gData, pData] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", tournamentId).single(),
       supabase
@@ -77,15 +67,25 @@ export default function TournamentDetail() {
         .order("id", { ascending: true }),
       fetchAllData<Player>("players"),
     ]);
+    if (tData.error) console.error("대회 정보 로딩 에러:", tData.error);
+    if (gData.error) console.error("대국 목록 로딩 에러:", gData.error);
     if (tData.data) setTournament(tData.data);
     if (gData.data) setGames(gData.data);
     setPlayers(pData);
     setLoading(false);
-  };
+  }, [tournamentId]);
 
   useEffect(() => {
-    loadData();
-  }, [tournamentId]);
+    void (async () => {
+      await loadData();
+    })();
+  }, [loadData]);
+
+  // id → 선수 빠른 조회용 맵 (루프/렌더에서 players.find 선형 탐색 방지)
+  const playerById = useMemo(
+    () => new Map(players.map((p) => [p.id, p])),
+    [players],
+  );
 
   // --- 대회 결과(순위) 자동 계산 로직 ---
   const tournamentResults = useMemo(() => {
@@ -105,7 +105,7 @@ export default function TournamentDetail() {
     games.forEach((g) => {
       // 흑, 백 선수 초기화
       if (!stats[g.black_player_id]) {
-        const p = players.find((p) => p.id === g.black_player_id);
+        const p = playerById.get(g.black_player_id);
         stats[g.black_player_id] = {
           id: g.black_player_id,
           name: p?.name || "알 수 없음",
@@ -117,7 +117,7 @@ export default function TournamentDetail() {
         };
       }
       if (!stats[g.white_player_id]) {
-        const p = players.find((p) => p.id === g.white_player_id);
+        const p = playerById.get(g.white_player_id);
         stats[g.white_player_id] = {
           id: g.white_player_id,
           name: p?.name || "알 수 없음",
@@ -158,7 +158,7 @@ export default function TournamentDetail() {
       if (b.wins !== a.wins) return b.wins - a.wins;
       return a.losses - b.losses;
     });
-  }, [games, players]);
+  }, [games, playerById]);
 
   const handleTournamentUpdate = async () => {
     if (!tournament) return;
@@ -187,8 +187,8 @@ export default function TournamentDetail() {
         note: "",
       });
     } else if (game) {
-      const bPlayer = players.find((p) => p.id === game.black_player_id);
-      const wPlayer = players.find((p) => p.id === game.white_player_id);
+      const bPlayer = playerById.get(game.black_player_id);
+      const wPlayer = playerById.get(game.white_player_id);
       setGameForm({
         id: game.id,
         blackName: bPlayer?.name || "",
@@ -219,7 +219,7 @@ export default function TournamentDetail() {
     }
 
     // 여러 줄이면 → 일괄 등록 모드
-    const payloads: any[] = [];
+    const payloads: GameInsert[] = [];
     const errors: string[] = [];
 
     lines.forEach((line, idx) => {
@@ -265,8 +265,8 @@ export default function TournamentDetail() {
       return alert(result);
     }
 
-    const bPlayer = players.find((p) => p.id === result.blackId);
-    const wPlayer = players.find((p) => p.id === result.whiteId);
+    const bPlayer = playerById.get(result.blackId);
+    const wPlayer = playerById.get(result.whiteId);
 
     setGameForm({
       ...gameForm,
@@ -632,11 +632,9 @@ export default function TournamentDetail() {
             ) : null}
             {games.map((g) => {
               const bPlayer =
-                players.find((p) => p.id === g.black_player_id)?.name ||
-                "알 수 없음";
+                playerById.get(g.black_player_id)?.name || "알 수 없음";
               const wPlayer =
-                players.find((p) => p.id === g.white_player_id)?.name ||
-                "알 수 없음";
+                playerById.get(g.white_player_id)?.name || "알 수 없음";
               let resStr = "무승부",
                 resColor = "#f59e0b";
               if (g.result === "BLACK_WIN") {

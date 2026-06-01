@@ -3,18 +3,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useData } from "./context/DataContext";
-
-type RankType = "DAN" | "KYU" | "UNRANKED";
+import { computeRatings, type Player, type RankType } from "@/lib/rating";
+import { parseLocalDate } from "@/lib/date";
 
 interface PlayerStat {
-  player: {
-    id: number;
-    name: string;
-    rank_level: number;
-    rank_point: number;
-    rank_type: RankType;
-    renjunet: string | null;
-  };
+  player: Player;
   rating: number;
   totalGames: number;
   wins: number;
@@ -38,7 +31,8 @@ export default function Home() {
     if (tournamentsData.length > 0 && !selectedDateStr) {
       const sorted = [...tournamentsData].sort(
         (a, b) =>
-          new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
+          parseLocalDate(a.start_date).getTime() -
+          parseLocalDate(b.start_date).getTime(),
       );
       setSelectedDateStr(sorted[sorted.length - 1].start_date);
     }
@@ -54,7 +48,8 @@ export default function Home() {
 
     const sortedTournaments = [...tournamentsData].sort(
       (a, b) =>
-        new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
+        parseLocalDate(a.start_date).getTime() -
+        parseLocalDate(b.start_date).getTime(),
     );
 
     let targetEndDate = new Date();
@@ -70,85 +65,18 @@ export default function Home() {
     }
 
     const windowTournaments = sortedTournaments.filter((t) => {
-      const td = new Date(t.start_date);
+      const td = parseLocalDate(t.start_date);
       return td >= targetStartDate && td <= targetEndDate;
     });
 
-    const statsMap = new Map<number, PlayerStat>();
-    playersData.forEach((p) => {
-      statsMap.set(Number(p.id), {
-        player: p,
-        rating: 1200,
-        totalGames: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-      });
-    });
+    const statsMap = computeRatings(playersData, gamesData, windowTournaments);
 
-    windowTournaments.forEach((t) => {
-      const ratingChanges = new Map<number, number>();
-      const tGames = gamesData.filter(
-        (g) => Number(g.tournament_id) === Number(t.id),
-      );
-
-      tGames.forEach((g) => {
-        const blackId = Number(g.black_player_id);
-        const whiteId = Number(g.white_player_id);
-
-        const black = statsMap.get(blackId);
-        const white = statsMap.get(whiteId);
-
-        if (!black || !white) return;
-
-        const rB = black.rating,
-          rW = white.rating;
-        const expectB = 1 / (1 + Math.pow(10, (rW - rB) / 400));
-        const expectW = 1 / (1 + Math.pow(10, (rB - rW) / 400));
-
-        const winPointB = (1 - expectB) * 12 * t.weight + 0.5;
-        const losePointB = (0 - expectB) * 12 + 0.5;
-        const drawPointB = (winPointB + losePointB) / 2;
-
-        const winPointW = (1 - expectW) * 12 * t.weight + 0.5;
-        const losePointW = (0 - expectW) * 12 + 0.5;
-        const drawPointW = (winPointW + losePointW) / 2;
-
-        let changeB = 0,
-          changeW = 0;
-        const resultUpper = String(g.result).toUpperCase();
-
-        if (resultUpper === "BLACK_WIN") {
-          changeB = winPointB;
-          changeW = losePointW;
-          black.wins++;
-          white.losses++;
-        } else if (resultUpper === "WHITE_WIN") {
-          changeB = losePointB;
-          changeW = winPointW;
-          black.losses++;
-          white.wins++;
-        } else if (resultUpper === "DRAW") {
-          changeB = drawPointB;
-          changeW = drawPointW;
-          black.draws++;
-          white.draws++;
-        }
-
-        black.totalGames++;
-        white.totalGames++;
-
-        ratingChanges.set(blackId, (ratingChanges.get(blackId) || 0) + changeB);
-        ratingChanges.set(whiteId, (ratingChanges.get(whiteId) || 0) + changeW);
-      });
-
-      ratingChanges.forEach((change, playerId) => {
-        const p = statsMap.get(playerId);
-        if (p) p.rating += change;
-      });
-    });
-
-    const sortedStats = Array.from(statsMap.values()).sort((a, b) => {
+    const sortedStats: PlayerStat[] = playersData
+      .map((p) => {
+        const s = statsMap.get(Number(p.id))!;
+        return { player: p, ...s };
+      })
+      .sort((a, b) => {
       const aEligible = a.totalGames >= 6;
       const bEligible = b.totalGames >= 6;
       if (aEligible && !bEligible) return -1;

@@ -7,67 +7,16 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { fetchAllData } from "@/lib/queries";
+import type { Player, Game, Tournament } from "@/lib/rating";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-type RankType = "DAN" | "KYU" | "UNRANKED";
-
-export interface Player {
-  id: number;
-  name: string;
-  rank_level: number;
-  rank_point: number;
-  rank_type: RankType;
-  renjunet: string | null;
-}
-export interface Game {
-  id: number;
-  tournament_id: number;
-  black_player_id: number;
-  white_player_id: number;
-  result: "BLACK_WIN" | "WHITE_WIN" | "DRAW" | string;
-}
-export interface Tournament {
-  id: number;
-  name: string;
-  weight: number;
-  start_date: string;
-}
+export type { Player, Game, Tournament, RankType } from "@/lib/rating";
 
 interface DataContextType {
   playersData: Player[];
   gamesData: Game[];
   tournamentsData: Tournament[];
   loading: boolean;
-}
-
-async function fetchAllData<T>(tableName: string): Promise<T[]> {
-  let allData: T[] = [];
-  const step = 1000;
-  let from = 0;
-  let to = step - 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*")
-      .range(from, to);
-    if (error) {
-      console.error(`${tableName} 데이터 로딩 에러:`, error);
-      throw error;
-    }
-    allData = [...allData, ...(data as T[])];
-    if (data.length < step) hasMore = false;
-    else {
-      from += step;
-      to += step;
-    }
-  }
-  return allData;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -85,9 +34,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const tData = await fetchAllData<Tournament>("tournaments");
         const gData = await fetchAllData<Game>("games");
 
-        if (pData) setPlayersData(pData);
-        if (tData) setTournamentsData(tData);
-        if (gData) setGamesData(gData);
+        setPlayersData(pData);
+        setTournamentsData(tData);
+        setGamesData(gData);
       } catch (error) {
         console.error("DB 로딩 중 예외 발생:", error);
       } finally {
@@ -95,11 +44,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (supabaseUrl && supabaseAnonKey) {
-      fetchDatabase();
-    } else {
-      setLoading(false);
-    }
+    fetchDatabase();
   }, []);
 
   return (
