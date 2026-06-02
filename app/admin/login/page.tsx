@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-// 1. 기존 createBrowserClient 임포트를 지우고, 우리가 만든 공용 supabase를 불러옵니다.
 import { supabase } from "@/lib/supabase";
 
 export default function AdminLogin() {
@@ -11,9 +10,6 @@ export default function AdminLogin() {
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-
-  // 2. 이 자리에 있던 const supabase = createBrowserClient(...) 코드를 통째로 삭제했습니다!
-  // 이제 위에서 import 한 공용 supabase를 바로 사용하게 됩니다.
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,8 +25,6 @@ export default function AdminLogin() {
       setErrorMsg(`로그인 실패: ${error.message}`);
       setLoading(false);
     } else {
-      // signInWithPassword 가 성공하면 세션 쿠키가 이미 기록된 상태이므로
-      // 곧바로 이동한 뒤 refresh 로 서버 컴포넌트/미들웨어를 갱신한다.
       router.replace("/admin/players");
       router.refresh();
     }

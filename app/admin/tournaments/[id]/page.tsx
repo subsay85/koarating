@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase"; // 1. 공용 supabase 통로 임포트
+import { supabase } from "@/lib/supabase";
 import { fetchAllData } from "@/lib/queries";
 
 interface Player {
@@ -87,7 +87,6 @@ export default function TournamentDetail() {
     [players],
   );
 
-  // --- 대회 결과(순위) 자동 계산 로직 ---
   const tournamentResults = useMemo(() => {
     const stats: Record<
       number,
@@ -103,7 +102,6 @@ export default function TournamentDetail() {
     > = {};
 
     games.forEach((g) => {
-      // 흑, 백 선수 초기화
       if (!stats[g.black_player_id]) {
         const p = playerById.get(g.black_player_id);
         stats[g.black_player_id] = {
@@ -204,7 +202,6 @@ export default function TournamentDetail() {
     const text = autoText.trim();
     if (!text) return;
 
-    // 줄 단위로 분리 (빈 줄 제거)
     const lines = text
       .split("\n")
       .map((l) => l.trim())
@@ -364,7 +361,6 @@ export default function TournamentDetail() {
     }
   };
 
-  // --- 2. 로그아웃 처리 함수 추가 ---
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -391,7 +387,6 @@ export default function TournamentDetail() {
         fontFamily: "sans-serif",
       }}
     >
-      {/* 3. 헤더 영역 수정 (뒤로가기 버튼과 로그아웃 버튼을 한 줄에 배치) */}
       <div
         style={{
           display: "flex",
@@ -548,7 +543,6 @@ export default function TournamentDetail() {
         </div>
       </div>
 
-      {/* 등록된 대국 리스트 헤더 */}
       <div
         style={{
           display: "flex",
@@ -560,7 +554,6 @@ export default function TournamentDetail() {
         <h2 style={{ margin: 0, fontSize: "1.3rem" }}>
           ⚔️ 등록된 대국 리스트 ({games.length}건)
         </h2>
-        {/* 버튼 그룹: 대회 결과 & 대국 추가 */}
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             onClick={() => setIsResultModalOpen(true)}
@@ -704,7 +697,6 @@ export default function TournamentDetail() {
         ))}
       </datalist>
 
-      {/* --- 대회 결과(순위) 모달 --- */}
       {isResultModalOpen && (
         <div
           style={{
@@ -850,7 +842,6 @@ export default function TournamentDetail() {
         </div>
       )}
 
-      {/* --- 기존 대국 추가/수정 모달 --- */}
       {isGameModalOpen && (
         <div
           style={{

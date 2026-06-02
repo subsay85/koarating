@@ -42,7 +42,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (url.pathname === "/admin/login" && user) {
-    url.pathname = "/admin/players"; // 곧 만들 선수 관리 페이지
+    url.pathname = "/admin/players";
     return NextResponse.redirect(url);
   }
 

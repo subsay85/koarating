@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   LineChart,
@@ -13,7 +13,12 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useData } from "../../context/DataContext";
-import { computeRatings, type RankType, type Tournament } from "@/lib/rating";
+import {
+  computeRatings,
+  computeCumulativeRatingTimeline,
+  type RankType,
+  type Tournament,
+} from "@/lib/rating";
 import { parseLocalDate } from "@/lib/date";
 
 interface ChartData {
@@ -43,111 +48,148 @@ export default function PlayerDetail() {
     [playersData, gamesData],
   );
 
-  const { finalStat, chartData } = useMemo(() => {
-    if (!targetPlayer || tournamentsData.length === 0)
-      return { finalStat: null, chartData: [] };
+  const [now] = useState(() => new Date());
 
-    const sortedAllTournaments = [...tournamentsData].sort((a, b) => {
-      const dA = parseLocalDate(a.start_date).getTime();
-      const dB = parseLocalDate(b.start_date).getTime();
-      if (dA === dB) return Number(a.id) - Number(b.id);
-      return dA - dB;
-    });
+  const computePlayerStats = useCallback(
+    (nowDate: Date | null) => {
+      if (!targetPlayer || tournamentsData.length === 0)
+        return { finalStat: null, chartData: [] as ChartData[] };
 
-    const latestDateStr =
-      sortedAllTournaments[sortedAllTournaments.length - 1].start_date;
-    const globalEnd = parseLocalDate(latestDateStr);
-    const globalStart = parseLocalDate(latestDateStr);
-    globalStart.setFullYear(globalStart.getFullYear() - 5);
-
-    const globalWindowTournaments = sortedAllTournaments.filter((t) => {
-      const tDate = parseLocalDate(t.start_date);
-      return tDate >= globalStart && tDate <= globalEnd;
-    });
-
-    const finalStatsMap = calculateRatingsForWindow(globalWindowTournaments);
-    const targetFinalStat = finalStatsMap.get(targetPlayerId) || {
-      rating: 1200,
-      totalGames: 0,
-      wins: 0,
-      draws: 0,
-      losses: 0,
-    };
-
-    const historyData: ChartData[] = [];
-    const participatedTournaments = sortedAllTournaments.filter((t) => {
-      return gamesData.some(
-        (g) =>
-          Number(g.tournament_id) === Number(t.id) &&
-          (Number(g.black_player_id) === targetPlayerId ||
-            Number(g.white_player_id) === targetPlayerId),
-      );
-    });
-
-    if (participatedTournaments.length > 0) {
-      const firstTDate = parseLocalDate(participatedTournaments[0].start_date);
-      const startMonth = new Date(
-        firstTDate.getFullYear(),
-        firstTDate.getMonth(),
-        1,
-      );
-      const now = new Date();
-      const endMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const currentMonth = new Date(startMonth);
-
-      const preStart = new Date(startMonth);
-      preStart.setMonth(preStart.getMonth() - 1);
-      historyData.push({
-        dateLabel: `${preStart.getFullYear()}-${String(preStart.getMonth() + 1).padStart(2, "0")}`,
-        rating5YearsOld: 1200,
-        ratingCumulative: 1200,
+      const sortedAllTournaments = [...tournamentsData].sort((a, b) => {
+        const dA = parseLocalDate(a.start_date).getTime();
+        const dB = parseLocalDate(b.start_date).getTime();
+        if (dA === dB) return Number(a.id) - Number(b.id);
+        return dA - dB;
       });
 
-      while (currentMonth <= endMonth) {
-        const tCum = sortedAllTournaments.filter(
-          (t) => parseLocalDate(t.start_date) < currentMonth,
-        );
-        const rCum =
-          calculateRatingsForWindow(tCum).get(targetPlayerId)?.rating || 1200;
+      const latestDateStr =
+        sortedAllTournaments[sortedAllTournaments.length - 1].start_date;
+      const globalEnd = parseLocalDate(latestDateStr);
+      const globalStart = parseLocalDate(latestDateStr);
+      globalStart.setFullYear(globalStart.getFullYear() - 5);
 
-        const pTournamentsUpToMonth = participatedTournaments.filter(
-          (t) => parseLocalDate(t.start_date) <= currentMonth,
+      const globalWindowTournaments = sortedAllTournaments.filter((t) => {
+        const tDate = parseLocalDate(t.start_date);
+        return tDate >= globalStart && tDate <= globalEnd;
+      });
+
+      const finalStatsMap = calculateRatingsForWindow(globalWindowTournaments);
+      const targetFinalStat = finalStatsMap.get(targetPlayerId) || {
+        rating: 1200,
+        totalGames: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+      };
+
+      const historyData: ChartData[] = [];
+      const participatedTournaments = sortedAllTournaments.filter((t) => {
+        return gamesData.some(
+          (g) =>
+            Number(g.tournament_id) === Number(t.id) &&
+            (Number(g.black_player_id) === targetPlayerId ||
+              Number(g.white_player_id) === targetPlayerId),
         );
-        let rOld = 1200;
-        if (pTournamentsUpToMonth.length > 0) {
-          const lastT = pTournamentsUpToMonth[pTournamentsUpToMonth.length - 1];
-          const lastTDate = parseLocalDate(lastT.start_date);
-          const oldStart = new Date(lastTDate);
-          oldStart.setFullYear(oldStart.getFullYear() - 5);
-          const tOld = sortedAllTournaments.filter((t) => {
-            const d = parseLocalDate(t.start_date);
-            return d >= oldStart && d <= lastTDate;
-          });
-          rOld =
-            calculateRatingsForWindow(tOld).get(targetPlayerId)?.rating || 1200;
+      });
+
+      if (nowDate && participatedTournaments.length > 0) {
+        const firstTDate = parseLocalDate(participatedTournaments[0].start_date);
+        const startMonth = new Date(
+          firstTDate.getFullYear(),
+          firstTDate.getMonth(),
+          1,
+        );
+        const endMonth = new Date(
+          nowDate.getFullYear(),
+          nowDate.getMonth() + 1,
+          1,
+        );
+
+        // 차트에 찍을 월 경계 목록 (startMonth ~ endMonth)
+        const monthBoundaries: Date[] = [];
+        const cursor = new Date(startMonth);
+        while (cursor <= endMonth) {
+          monthBoundaries.push(new Date(cursor));
+          cursor.setMonth(cursor.getMonth() + 1);
         }
 
+        // 누적선(노란선): 대회를 시간순으로 한 번만 누적 적용해 각 월의 레이팅을 구한다.
+        const cumulativeTimeline = computeCumulativeRatingTimeline(
+          playersData,
+          gamesData,
+          sortedAllTournaments,
+          targetPlayerId,
+          monthBoundaries,
+        );
+
+        const preStart = new Date(startMonth);
+        preStart.setMonth(preStart.getMonth() - 1);
         historyData.push({
-          dateLabel: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`,
-          rating5YearsOld: Number(rOld.toFixed(1)),
-          ratingCumulative: Number(rCum.toFixed(1)),
+          dateLabel: `${preStart.getFullYear()}-${String(preStart.getMonth() + 1).padStart(2, "0")}`,
+          rating5YearsOld: 1200,
+          ratingCumulative: 1200,
         });
 
-        currentMonth.setMonth(currentMonth.getMonth() + 1);
-      }
-    }
+        monthBoundaries.forEach((currentMonth, i) => {
+          const rCum = cumulativeTimeline[i];
 
-    return {
-      finalStat: targetFinalStat,
-      chartData: historyData,
-    };
-  }, [
-    targetPlayerId,
-    targetPlayer,
-    tournamentsData,
-    gamesData,
-    calculateRatingsForWindow,
-  ]);
+          // 5년선(빨간선): 슬라이딩 윈도우라 윈도우 시작부터 매번 재계산한다.
+          const pTournamentsUpToMonth = participatedTournaments.filter(
+            (t) => parseLocalDate(t.start_date) <= currentMonth,
+          );
+          let rOld = 1200;
+          if (pTournamentsUpToMonth.length > 0) {
+            const lastT =
+              pTournamentsUpToMonth[pTournamentsUpToMonth.length - 1];
+            const lastTDate = parseLocalDate(lastT.start_date);
+            const oldStart = new Date(lastTDate);
+            oldStart.setFullYear(oldStart.getFullYear() - 5);
+            const tOld = sortedAllTournaments.filter((t) => {
+              const d = parseLocalDate(t.start_date);
+              return d >= oldStart && d <= lastTDate;
+            });
+            rOld =
+              calculateRatingsForWindow(tOld).get(targetPlayerId)?.rating ||
+              1200;
+          }
+
+          historyData.push({
+            dateLabel: `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`,
+            rating5YearsOld: Number(rOld.toFixed(1)),
+            ratingCumulative: Number(rCum.toFixed(1)),
+          });
+        });
+      }
+
+      return { finalStat: targetFinalStat, chartData: historyData };
+    },
+    [
+      targetPlayer,
+      targetPlayerId,
+      playersData,
+      tournamentsData,
+      gamesData,
+      calculateRatingsForWindow,
+    ],
+  );
+
+  const { finalStat, chartData } = useMemo(
+    () => computePlayerStats(now),
+    [computePlayerStats, now],
+  );
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (!targetPlayer || tournamentsData.length === 0) return;
+
+    const start = performance.now();
+    const { chartData: cd } = computePlayerStats(new Date());
+    const ms = performance.now() - start;
+    console.log(
+      `[선수 상세 #${targetPlayerId}] 순수 계산 시간: ${ms.toFixed(2)}ms ` +
+        `(차트 ${cd.length}개월: 누적=증분 1회 / 5년=월별 재계산, 대회 ${tournamentsData.length}개, 게임 ${gamesData.length}개)`,
+    );
+  }, [targetPlayer, targetPlayerId, tournamentsData, gamesData, computePlayerStats]);
 
   const playerHistory = useMemo(() => {
     if (!targetPlayerId || !targetPlayer || tournamentsData.length === 0)
@@ -276,7 +318,6 @@ export default function PlayerDetail() {
         ← 목록으로 돌아가기
       </button>
 
-      {/* 요약 카드 */}
       <div
         style={{
           backgroundColor: "#fff",
@@ -368,7 +409,6 @@ export default function PlayerDetail() {
         </div>
       </div>
 
-      {/* 방식별 레이팅 변화 그래프 */}
       <div
         style={{
           backgroundColor: "#fff",
@@ -388,8 +428,8 @@ export default function PlayerDetail() {
         >
           📈 방식별 레이팅 변화 추이 비교
         </h2>
-        <div style={{ width: "100%", height: "350px" }}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div style={{ width: "100%" }}>
+          <ResponsiveContainer width="100%" height={350} minWidth={0}>
             <LineChart
               data={chartData}
               margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
@@ -439,7 +479,6 @@ export default function PlayerDetail() {
         </div>
       </div>
 
-      {/* 전체 대국 결과 목록 */}
       <div
         style={{
           backgroundColor: "#fff",

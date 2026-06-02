@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase"; // 1. 공용 supabase 통로 임포트
+import { supabase } from "@/lib/supabase";
 
 interface Tournament {
   id: number;
@@ -86,14 +86,13 @@ export default function AdminTournaments() {
     }
   };
 
-  // --- 2. 로그아웃 처리 함수 추가 ---
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       alert("로그아웃 실패: " + error.message);
     } else {
       alert("안전하게 로그아웃 되었습니다.");
-      router.push("/admin/login"); // 로그아웃 후 로그인 페이지로 이동
+      router.push("/admin/login");
     }
   };
 
@@ -118,7 +117,6 @@ export default function AdminTournaments() {
           🏆 대회(Tournament) 관리
         </h1>
 
-        {/* 3. 버튼들을 한데 묶어주는 영역 (로그아웃 버튼 추가) */}
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             onClick={handleLogout}
@@ -155,7 +153,6 @@ export default function AdminTournaments() {
         </div>
       </header>
 
-      {/* 필터 바 */}
       <div style={{ marginBottom: "20px" }}>
         <input
           type="text"
@@ -172,7 +169,6 @@ export default function AdminTournaments() {
         />
       </div>
 
-      {/* 리스트 테이블 */}
       <div
         style={{
           border: "1px solid #eee",
@@ -254,7 +250,6 @@ export default function AdminTournaments() {
         </table>
       </div>
 
-      {/* 추가 모달 */}
       {isModalOpen && (
         <div
           style={{

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase"; // 공용 supabase 통로 임포트
+import { supabase } from "@/lib/supabase";
 
 type RankType = "DAN" | "KYU" | "UNRANKED";
 
@@ -152,7 +152,6 @@ export default function AdminPlayers() {
     fetchPlayers();
   };
 
-  // --- 로그아웃 처리 함수 ---
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -182,7 +181,6 @@ export default function AdminPlayers() {
       >
         <h1 style={{ fontSize: "1.8rem", margin: 0 }}>👤 선수 관리</h1>
 
-        {/* 버튼 그룹 */}
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             onClick={handleLogout}
@@ -219,7 +217,6 @@ export default function AdminPlayers() {
         </div>
       </header>
 
-      {/* 필터 바 */}
       <div style={{ marginBottom: "20px" }}>
         <input
           type="text"
@@ -236,7 +233,6 @@ export default function AdminPlayers() {
         />
       </div>
 
-      {/* 선수 리스트 테이블 */}
       <div
         style={{
           border: "1px solid #eee",
@@ -322,7 +318,6 @@ export default function AdminPlayers() {
         </table>
       </div>
 
-      {/* 추가/수정 공통 모달 */}
       {(isAddModalOpen || isEditModalOpen) && (
         <div
           style={{
@@ -417,7 +412,6 @@ export default function AdminPlayers() {
                 >
                   기력 *
                 </label>
-                {/* select 태그가 제대로 열리고 닫히도록 수정했습니다 */}
                 <select
                   value={formData.rankIdx}
                   onChange={(e) =>

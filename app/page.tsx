@@ -1,9 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useData } from "./context/DataContext";
-import { computeRatings, type Player, type RankType } from "@/lib/rating";
+import {
+  computeRatings,
+  type Player,
+  type RankType,
+  type Tournament,
+} from "@/lib/rating";
 import { parseLocalDate } from "@/lib/date";
 
 interface PlayerStat {
@@ -16,6 +21,173 @@ interface PlayerStat {
   rankNum?: number | string;
 }
 
+/**
+ * 렌더마다 새로 만들 필요가 없는 정적 style 객체들은 모듈 스코프로 끌어올린다.
+ * (컴포넌트 바깥 → 앱 생애 동안 딱 1번만 생성되고, 모든 렌더가 같은 참조를 공유)
+ */
+const loadingStyle: React.CSSProperties = {
+  padding: "40px",
+  textAlign: "center",
+  fontSize: "1.2rem",
+  color: "#666",
+};
+
+const pageStyle: React.CSSProperties = {
+  padding: "20px",
+  maxWidth: "900px",
+  margin: "0 auto",
+  fontFamily: "sans-serif",
+};
+
+const h1Style: React.CSSProperties = {
+  fontSize: "1.8rem",
+  margin: "0 0 20px 0",
+  color: "#111",
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+};
+
+const tabBarStyle: React.CSSProperties = {
+  display: "flex",
+  width: "100%",
+  marginBottom: "16px",
+  borderRadius: "8px",
+  overflow: "hidden",
+  border: "1px solid #d1d5db",
+};
+
+const tabButtonBase: React.CSSProperties = {
+  flex: 1,
+  padding: "12px",
+  fontSize: "1rem",
+  fontWeight: "bold",
+  cursor: "pointer",
+  border: "none",
+  transition: "all 0.2s",
+};
+
+const dateWrapStyle: React.CSSProperties = { marginBottom: "16px" };
+
+const dateInputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "12px",
+  fontSize: "1rem",
+  borderRadius: "8px",
+  border: "1px solid #d1d5db",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const searchWrapStyle: React.CSSProperties = { marginBottom: "20px" };
+
+const searchInputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "12px",
+  fontSize: "1rem",
+  borderRadius: "8px",
+  border: "1px solid #d1d5db",
+  outline: "none",
+  boxSizing: "border-box",
+  backgroundColor: "#f9fafb",
+};
+
+const tableScrollStyle: React.CSSProperties = {
+  overflowX: "auto",
+  border: "1px solid #eaeaea",
+  borderRadius: "8px",
+  boxShadow: "0 4px 6px rgba(0,0,0,0.05)",
+  backgroundColor: "#fff",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  minWidth: "600px",
+  borderCollapse: "collapse",
+  tableLayout: "fixed",
+  textAlign: "center",
+  whiteSpace: "nowrap",
+};
+
+const theadRowStyle: React.CSSProperties = {
+  backgroundColor: "#f8f9fa",
+  borderBottom: "2px solid #ddd",
+  color: "#555",
+};
+
+const thStyle: React.CSSProperties = { padding: "14px 10px" };
+
+const linkStyle: React.CSSProperties = {
+  color: "#2563eb",
+  textDecoration: "underline",
+  textUnderlineOffset: "4px",
+};
+
+const emptyCellStyle: React.CSSProperties = { padding: "40px", color: "#888" };
+
+// --- 행/셀: 값이 몇 가지로 한정되므로 변형(variant)을 미리 만들어 둔다. (행당 객체 생성 0) ---
+const rowStyleEven: React.CSSProperties = {
+  borderBottom: "1px solid #eaeaea",
+  backgroundColor: "#fff",
+  transition: "background-color 0.2s",
+};
+
+const rowStyleOdd: React.CSSProperties = {
+  borderBottom: "1px solid #eaeaea",
+  backgroundColor: "#fafafa",
+  transition: "background-color 0.2s",
+};
+
+const rankCellRanked: React.CSSProperties = {
+  padding: "14px 10px",
+  fontWeight: "bold",
+  color: "#333",
+  fontSize: "1rem",
+};
+
+const rankCellUnranked: React.CSSProperties = {
+  padding: "14px 10px",
+  fontWeight: "bold",
+  color: "#aaa",
+  fontSize: "1rem",
+};
+
+const nameCellStyle: React.CSSProperties = {
+  padding: "14px 10px",
+  fontWeight: "500",
+  fontSize: "1rem",
+};
+
+const rankTypeCellStyle: React.CSSProperties = {
+  padding: "14px 10px",
+  color: "#4b5563",
+};
+
+const ratingCellStyle: React.CSSProperties = {
+  padding: "14px 10px",
+  color: "#2563eb",
+  fontWeight: "bold",
+  fontSize: "1.05rem",
+};
+
+const recordCellStyle: React.CSSProperties = {
+  padding: "14px 10px",
+  fontSize: "0.95rem",
+  color: "#4b5563",
+};
+
+const pointCellPositive: React.CSSProperties = {
+  padding: "14px 10px",
+  color: "#10b981",
+  fontWeight: "500",
+};
+
+const pointCellZero: React.CSSProperties = {
+  padding: "14px 10px",
+  color: "#4b5563",
+  fontWeight: "500",
+};
+
 export default function Home() {
   const { playersData, gamesData, tournamentsData, loading } = useData();
 
@@ -24,7 +196,6 @@ export default function Home() {
   );
   const [selectedDateStr, setSelectedDateStr] = useState<string>("");
 
-  // 검색어 상태 추가
   const [searchTerm, setSearchTerm] = useState<string>("");
 
   useEffect(() => {
@@ -38,65 +209,145 @@ export default function Home() {
     }
   }, [tournamentsData, selectedDateStr]);
 
-  const rankingResult = useMemo(() => {
+  // 대회 정렬은 대회 데이터가 바뀔 때만 한 번 한다.
+  const sortedTournaments = useMemo(
+    () =>
+      [...tournamentsData].sort(
+        (a, b) =>
+          parseLocalDate(a.start_date).getTime() -
+          parseLocalDate(b.start_date).getTime(),
+      ),
+    [tournamentsData],
+  );
+
+  // 주어진 대회 윈도우로 순위표를 만든다. (순수 함수 — 렌더 중 호출 가능)
+  const computeRankingForWindow = useCallback(
+    (windowTournaments: Tournament[]): PlayerStat[] => {
+      const statsMap = computeRatings(
+        playersData,
+        gamesData,
+        windowTournaments,
+      );
+
+      const sortedStats: PlayerStat[] = playersData
+        .map((p) => {
+          const s = statsMap.get(Number(p.id))!;
+          return { player: p, ...s };
+        })
+        .sort((a, b) => {
+          const aEligible = a.totalGames >= 6;
+          const bEligible = b.totalGames >= 6;
+          if (aEligible && !bEligible) return -1;
+          if (!aEligible && bEligible) return 1;
+          return b.rating - a.rating;
+        });
+
+      let currentRank = 1;
+      sortedStats.forEach((stat) => {
+        if (stat.totalGames < 6) {
+          stat.rankNum = "-";
+        } else {
+          stat.rankNum = currentRank++;
+        }
+      });
+
+      return sortedStats;
+    },
+    [playersData, gamesData],
+  );
+
+  // 날짜 선택 모드의 대회 윈도우 (선택일 기준 직전 5년). 선택일이 바뀔 때만 다시 만든다.
+  const specificDateWindow = useMemo(() => {
+    if (!selectedDateStr) return [];
+    const [y, m, d] = selectedDateStr.split("-").map(Number);
+    const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+    const start = new Date(end);
+    start.setFullYear(start.getFullYear() - 5);
+    start.setHours(0, 0, 0, 0);
+    return sortedTournaments.filter((t) => {
+      const td = parseLocalDate(t.start_date);
+      return td >= start && td <= end;
+    });
+  }, [sortedTournaments, selectedDateStr]);
+
+  // 전체 기간: 데이터가 바뀔 때만 1번 계산 후 캐시된다. (탭 토글로는 재계산되지 않음)
+  const allTimeRanking = useMemo(() => {
     if (
       playersData.length === 0 ||
       tournamentsData.length === 0 ||
       gamesData.length === 0
     )
       return [];
+    return computeRankingForWindow(sortedTournaments);
+  }, [
+    playersData,
+    gamesData,
+    tournamentsData,
+    sortedTournaments,
+    computeRankingForWindow,
+  ]);
 
-    const sortedTournaments = [...tournamentsData].sort(
-      (a, b) =>
-        parseLocalDate(a.start_date).getTime() -
-        parseLocalDate(b.start_date).getTime(),
-    );
+  // 날짜 선택: 선택일이 바뀔 때만 재계산된다. (탭 토글로는 재계산되지 않음)
+  const specificDateRanking = useMemo(() => {
+    if (
+      playersData.length === 0 ||
+      tournamentsData.length === 0 ||
+      gamesData.length === 0 ||
+      !selectedDateStr
+    )
+      return [];
+    return computeRankingForWindow(specificDateWindow);
+  }, [
+    playersData,
+    gamesData,
+    tournamentsData,
+    specificDateWindow,
+    selectedDateStr,
+    computeRankingForWindow,
+  ]);
 
-    let targetEndDate = new Date();
-    let targetStartDate = new Date(0);
+  // 화면에는 현재 모드에 맞는 (이미 계산·캐시된) 결과만 고른다.
+  const rankingResult =
+    mode === "SPECIFIC_DATE" && selectedDateStr
+      ? specificDateRanking
+      : allTimeRanking;
 
-    if (mode === "SPECIFIC_DATE" && selectedDateStr) {
-      const [y, m, d] = selectedDateStr.split("-").map(Number);
-      targetEndDate = new Date(y, m - 1, d, 23, 59, 59, 999);
+  // [개발 모드 전용] 순수 계산 시간 측정.
+  // performance.now() 는 렌더 중엔 호출 금지(impure)라 렌더 밖인 이펙트에서 잰다.
+  // 프로덕션에선 실행되지 않으므로 측정용 재계산 비용도 들지 않는다.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (
+      playersData.length === 0 ||
+      tournamentsData.length === 0 ||
+      gamesData.length === 0
+    )
+      return;
 
-      targetStartDate = new Date(targetEndDate);
-      targetStartDate.setFullYear(targetStartDate.getFullYear() - 5);
-      targetStartDate.setHours(0, 0, 0, 0);
+    const timeIt = (windowTournaments: Tournament[], label: string) => {
+      const start = performance.now();
+      computeRankingForWindow(windowTournaments);
+      const ms = performance.now() - start;
+      console.log(
+        `[${label}] 순수 계산 시간: ${ms.toFixed(2)}ms ` +
+          `(대회 ${windowTournaments.length}개, 게임 ${gamesData.length}개, 선수 ${playersData.length}명)`,
+      );
+    };
+
+    timeIt(sortedTournaments, "메인 랭킹 · 전체 기간");
+    if (selectedDateStr) {
+      timeIt(specificDateWindow, `메인 랭킹 · ${selectedDateStr} 기준 최근 5년`);
     }
+  }, [
+    playersData,
+    gamesData,
+    tournamentsData,
+    sortedTournaments,
+    specificDateWindow,
+    selectedDateStr,
+    computeRankingForWindow,
+  ]);
 
-    const windowTournaments = sortedTournaments.filter((t) => {
-      const td = parseLocalDate(t.start_date);
-      return td >= targetStartDate && td <= targetEndDate;
-    });
-
-    const statsMap = computeRatings(playersData, gamesData, windowTournaments);
-
-    const sortedStats: PlayerStat[] = playersData
-      .map((p) => {
-        const s = statsMap.get(Number(p.id))!;
-        return { player: p, ...s };
-      })
-      .sort((a, b) => {
-      const aEligible = a.totalGames >= 6;
-      const bEligible = b.totalGames >= 6;
-      if (aEligible && !bEligible) return -1;
-      if (!aEligible && bEligible) return 1;
-      return b.rating - a.rating;
-    });
-
-    let currentRank = 1;
-    sortedStats.forEach((stat) => {
-      if (stat.totalGames < 6) {
-        stat.rankNum = "-";
-      } else {
-        stat.rankNum = currentRank++;
-      }
-    });
-
-    return sortedStats;
-  }, [playersData, gamesData, tournamentsData, mode, selectedDateStr]);
-
-  // 이름으로 필터링된 결과 계산
   const filteredRankingResult = useMemo(() => {
     if (!searchTerm.trim()) return rankingResult;
     return rankingResult.filter((stat) =>
@@ -112,61 +363,17 @@ export default function Home() {
   };
 
   if (loading)
-    return (
-      <div
-        style={{
-          padding: "40px",
-          textAlign: "center",
-          fontSize: "1.2rem",
-          color: "#666",
-        }}
-      >
-        ⏳ 데이터를 불러오는 중입니다...
-      </div>
-    );
+    return <div style={loadingStyle}>⏳ 데이터를 불러오는 중입니다...</div>;
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        maxWidth: "900px",
-        margin: "0 auto",
-        fontFamily: "sans-serif",
-      }}
-    >
-      <h1
-        style={{
-          fontSize: "1.8rem",
-          margin: "0 0 20px 0",
-          color: "#111",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        🏆 KOA 레이팅 랭킹
-      </h1>
+    <div style={pageStyle}>
+      <h1 style={h1Style}>🏆 KOA 레이팅 랭킹</h1>
 
-      <div
-        style={{
-          display: "flex",
-          width: "100%",
-          marginBottom: "16px",
-          borderRadius: "8px",
-          overflow: "hidden",
-          border: "1px solid #d1d5db",
-        }}
-      >
+      <div style={tabBarStyle}>
         <button
           onClick={() => setMode("ALL_TIME")}
           style={{
-            flex: 1,
-            padding: "12px",
-            fontSize: "1rem",
-            fontWeight: "bold",
-            cursor: "pointer",
-            border: "none",
-            transition: "all 0.2s",
+            ...tabButtonBase,
             backgroundColor: mode === "ALL_TIME" ? "#3b82f6" : "#fff",
             color: mode === "ALL_TIME" ? "#fff" : "#4b5563",
           }}
@@ -176,14 +383,8 @@ export default function Home() {
         <button
           onClick={() => setMode("SPECIFIC_DATE")}
           style={{
-            flex: 1,
-            padding: "12px",
-            fontSize: "1rem",
-            fontWeight: "bold",
-            cursor: "pointer",
-            border: "none",
+            ...tabButtonBase,
             borderLeft: "1px solid #d1d5db",
-            transition: "all 0.2s",
             backgroundColor: mode === "SPECIFIC_DATE" ? "#3b82f6" : "#fff",
             color: mode === "SPECIFIC_DATE" ? "#fff" : "#4b5563",
           }}
@@ -193,145 +394,70 @@ export default function Home() {
       </div>
 
       {mode === "SPECIFIC_DATE" && (
-        <div style={{ marginBottom: "16px" }}>
+        <div style={dateWrapStyle}>
           <input
             type="date"
             value={selectedDateStr}
             onChange={(e) => setSelectedDateStr(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px",
-              fontSize: "1rem",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
+            style={dateInputStyle}
           />
         </div>
       )}
 
-      {/* --- 선수 이름 검색 필터 --- */}
-      <div style={{ marginBottom: "20px" }}>
+      <div style={searchWrapStyle}>
         <input
           type="text"
           placeholder="🔍 선수 이름 검색..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "12px",
-            fontSize: "1rem",
-            borderRadius: "8px",
-            border: "1px solid #d1d5db",
-            outline: "none",
-            boxSizing: "border-box",
-            backgroundColor: "#f9fafb",
-          }}
+          style={searchInputStyle}
         />
       </div>
 
-      <div
-        style={{
-          overflowX: "auto",
-          border: "1px solid #eaeaea",
-          borderRadius: "8px",
-          boxShadow: "0 4px 6px rgba(0,0,0,0.05)",
-          backgroundColor: "#fff",
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            minWidth: "600px",
-            borderCollapse: "collapse",
-            textAlign: "center",
-            whiteSpace: "nowrap",
-          }}
-        >
+      <div style={tableScrollStyle}>
+        <table style={tableStyle}>
           <thead>
-            <tr
-              style={{
-                backgroundColor: "#f8f9fa",
-                borderBottom: "2px solid #ddd",
-                color: "#555",
-              }}
-            >
-              <th style={{ padding: "14px 10px" }}>순위</th>
-              <th style={{ padding: "14px 10px" }}>이름</th>
-              <th style={{ padding: "14px 10px" }}>기력</th>
-              <th style={{ padding: "14px 10px" }}>레이팅</th>
-              <th style={{ padding: "14px 10px" }}>전적 (승-무-패)</th>
-              <th style={{ padding: "14px 10px" }}>승단포인트</th>
+            <tr style={theadRowStyle}>
+              <th style={thStyle}>순위</th>
+              <th style={thStyle}>이름</th>
+              <th style={thStyle}>기력</th>
+              <th style={thStyle}>레이팅</th>
+              <th style={thStyle}>전적 (승-무-패)</th>
+              <th style={thStyle}>승단포인트</th>
             </tr>
           </thead>
           <tbody>
             {filteredRankingResult.map((stat, index) => (
               <tr
                 key={stat.player.id}
-                style={{
-                  borderBottom: "1px solid #eaeaea",
-                  backgroundColor: index % 2 === 0 ? "#fff" : "#fafafa",
-                  transition: "background-color 0.2s",
-                }}
+                style={index % 2 === 0 ? rowStyleEven : rowStyleOdd}
               >
                 <td
-                  style={{
-                    padding: "14px 10px",
-                    fontWeight: "bold",
-                    color: stat.rankNum === "-" ? "#aaa" : "#333",
-                    fontSize: "1rem",
-                  }}
+                  style={
+                    stat.rankNum === "-" ? rankCellUnranked : rankCellRanked
+                  }
                 >
                   {stat.rankNum}
                 </td>
-                <td
-                  style={{
-                    padding: "14px 10px",
-                    fontWeight: "500",
-                    fontSize: "1rem",
-                  }}
-                >
-                  <Link
-                    href={`/player/${stat.player.id}`}
-                    style={{
-                      color: "#2563eb",
-                      textDecoration: "underline",
-                      textUnderlineOffset: "4px",
-                    }}
-                  >
+                <td style={nameCellStyle}>
+                  <Link href={`/player/${stat.player.id}`} style={linkStyle}>
                     {stat.player.name}
                   </Link>
                 </td>
-                <td style={{ padding: "14px 10px", color: "#4b5563" }}>
+                <td style={rankTypeCellStyle}>
                   {formatRank(stat.player.rank_level, stat.player.rank_type)}
                 </td>
-                <td
-                  style={{
-                    padding: "14px 10px",
-                    color: "#2563eb",
-                    fontWeight: "bold",
-                    fontSize: "1.05rem",
-                  }}
-                >
-                  {stat.rating.toFixed(1)}
-                </td>
-                <td
-                  style={{
-                    padding: "14px 10px",
-                    fontSize: "0.95rem",
-                    color: "#4b5563",
-                  }}
-                >
+                <td style={ratingCellStyle}>{stat.rating.toFixed(1)}</td>
+                <td style={recordCellStyle}>
                   {stat.totalGames}전 ({stat.wins}승 {stat.draws}무{" "}
                   {stat.losses}패)
                 </td>
                 <td
-                  style={{
-                    padding: "14px 10px",
-                    color: stat.player.rank_point > 0 ? "#10b981" : "#4b5563",
-                    fontWeight: "500",
-                  }}
+                  style={
+                    stat.player.rank_point > 0
+                      ? pointCellPositive
+                      : pointCellZero
+                  }
                 >
                   {stat.player.rank_point}
                 </td>
@@ -339,7 +465,7 @@ export default function Home() {
             ))}
             {filteredRankingResult.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ padding: "40px", color: "#888" }}>
+                <td colSpan={6} style={emptyCellStyle}>
                   검색된 선수 데이터가 없습니다.
                 </td>
               </tr>
