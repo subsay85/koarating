@@ -119,6 +119,24 @@ export default function AdminTournaments() {
 
         <div style={{ display: "flex", gap: "10px" }}>
           <button
+            onClick={() => router.push("/admin/players")}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#fff",
+              color: "#2563eb",
+              border: "1px solid #2563eb",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "bold",
+              transition: "opacity 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            👤 선수 관리
+          </button>
+
+          <button
             onClick={handleLogout}
             style={{
               padding: "10px 20px",
